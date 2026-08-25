@@ -35,9 +35,93 @@ class DartSdk extends Sdk {
     // The Dart executable is in "/path/to/sdk/bin/dart", so two levels up is
     // "/path/to/sdk".
     final aboveExecutable = p.dirname(p.dirname(platform.resolvedExecutable));
-    assert(fileExists(p.join(aboveExecutable, 'version')));
+    if (fileExists(
+          p.join(
+            aboveExecutable,
+            'bin',
+            platform.isWindows ? 'dart.exe' : 'dart',
+          ),
+        ) &&
+        fileExists(p.join(aboveExecutable, 'version'))) {
+      return aboveExecutable;
+    }
+
+    // Fallback when running as a standalone binary outside a Dart SDK layout.
+    final pathEnv = platform.environment['PATH'] ?? '';
+    final pathSeparator = platform.isWindows ? ';' : ':';
+    for (final dir in pathEnv.split(pathSeparator)) {
+      final flutterDartSdk = p.join(dir, 'cache', 'dart-sdk');
+      if (fileExists(
+            p.join(
+              flutterDartSdk,
+              'bin',
+              platform.isWindows ? 'dart.exe' : 'dart',
+            ),
+          ) &&
+          fileExists(p.join(flutterDartSdk, 'version'))) {
+        return flutterDartSdk;
+      }
+      final candidate = p.join(dir, platform.isWindows ? 'dart.exe' : 'dart');
+      if (fileExists(candidate)) {
+        final resolved = p.dirname(p.dirname(canonicalize(candidate)));
+        if (fileExists(
+              p.join(resolved, 'bin', platform.isWindows ? 'dart.exe' : 'dart'),
+            ) &&
+            fileExists(p.join(resolved, 'version'))) {
+          return resolved;
+        }
+      }
+    }
+
     return aboveExecutable;
   }();
+
+  /// The path to the dart executable in this SDK.
+  static final String _executable = () {
+    final exe = p.join(
+      _rootDirectory,
+      'bin',
+      platform.isWindows ? 'dart.exe' : 'dart',
+    );
+    if (fileExists(exe)) return exe;
+
+    // Fallback if _rootDirectory is pointing to a mock SDK directory without a
+    // dart binary.
+    final aboveExecutable = p.join(
+      p.dirname(p.dirname(platform.resolvedExecutable)),
+      'bin',
+      platform.isWindows ? 'dart.exe' : 'dart',
+    );
+    if (fileExists(aboveExecutable)) return aboveExecutable;
+
+    final pathEnv = platform.environment['PATH'] ?? '';
+    final pathSeparator = platform.isWindows ? ';' : ':';
+    for (final dir in pathEnv.split(pathSeparator)) {
+      for (final candidate in [
+        p.join(
+          dir,
+          'cache',
+          'dart-sdk',
+          'bin',
+          platform.isWindows ? 'dart.exe' : 'dart',
+        ),
+        p.join(dir, platform.isWindows ? 'dart.exe' : 'dart'),
+      ]) {
+        if (fileExists(candidate)) {
+          final resolved = canonicalize(candidate);
+          final sdkDir = p.dirname(p.dirname(resolved));
+          if (fileExists(p.join(sdkDir, 'version')) ||
+              fileExists(p.join(sdkDir, 'bin', 'snapshots'))) {
+            return resolved;
+          }
+        }
+      }
+    }
+    return exe;
+  }();
+
+  /// The path to the `dart` executable.
+  String get executable => _executable;
 
   /// The loaded `sdk_packages.yaml` file if present.
   static final SdkPackageConfig? _sdkPackages = () {
